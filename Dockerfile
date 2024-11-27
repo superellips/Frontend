@@ -23,17 +23,17 @@ CMD [ "air", "-c", ".air.toml" ]
 FROM base AS builder
 WORKDIR /app
 
-ENV GIN_MODE="release"
-
 COPY go.mod go.sum .air.toml ./
 RUN go mod download && go mod verify
 
 COPY *.go ./
-RUN go build -o /guestbookservice
+RUN go build -o ./frontend
 
 FROM alpine:latest AS prod
 
-COPY --from=builder /app/guestbookservice /usr/local/bin/guestbookservice
+ENV GIN_MODE="release"
+
+COPY --from=builder /app/frontend /usr/local/bin/frontend
 EXPOSE 8080
 
-ENTRYPOINT [ "/usr/local/bin/guestbookservice" ]
+ENTRYPOINT [ "/usr/local/bin/frontend" ]
