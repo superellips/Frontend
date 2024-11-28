@@ -12,7 +12,10 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
+
+var jwtKey = []byte("my_secret_key")
 
 type Page struct {
 	Title string
@@ -26,6 +29,20 @@ func loadPage(title string) (*Page, error) {
 		return nil, err
 	}
 	return &Page{Title: title, Body: body}, nil
+}
+
+func GenerateToken(username string) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"name": username,
+		"exp":  time.Now().Add(1 * time.Hour).Unix(),
+	})
+	return token.SignedString(jwtKey)
+}
+
+func ValidateToken(tokenString string) (*jwt.Token, error) {
+	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
 }
 
 func getIndex(c *gin.Context) {
@@ -76,6 +93,18 @@ func getLogin(c *gin.Context) {
 	renderTemplate(c.Writer, "default", p)
 }
 
+func postLogin(c *gin.Context) {
+	name := c.Request.FormValue("name")
+	// check future password here
+	token, err := GenerateToken(name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Token generation failed"})
+		return
+	}
+	c.SetCookie("auth", token, 3600, "/", "localhost", false, true)
+	c.JSON(http.StatusOK, gin.H{"message": "Login successful"})
+}
+
 func getUserPage(c *gin.Context) {
 	id := c.Param("id")
 	url := "http://apigateway:8080/user/" + id
@@ -93,6 +122,22 @@ func getUserPage(c *gin.Context) {
 		return
 	}
 	p := Page{Title: returnData["name"], Body: []byte("<a href='/guestbook/create'>Create guestbook.</a>")}
+	tokenString, err := c.Cookie("auth")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	token, err := ValidateToken(tokenString)
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	claims, _ := token.Claims.(jwt.MapClaims)
+	if claims["name"] != returnData["name"] {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized."})
+	}
 	renderTemplate(c.Writer, "default", &p)
 }
 
@@ -134,6 +179,7 @@ func main() {
 		rootGroup.GET("/register", getRegister)
 		rootGroup.POST("/register", postRegister)
 		rootGroup.GET("/login", getLogin)
+		rootGroup.POST("/login", postLogin)
 		rootGroup.GET("/user/:id", getUserPage)
 		rootGroup.GET("/guestbook/create", getCreateGuestbook)
 		rootGroup.POST("/guestbook/create", postCreateGuestbook)
