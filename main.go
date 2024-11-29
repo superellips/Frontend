@@ -31,10 +31,11 @@ func loadPage(title string) (*Page, error) {
 	return &Page{Title: title, Body: body}, nil
 }
 
-func GenerateToken(username string) (string, error) {
+func GenerateToken(username string, id string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"name": username,
-		"exp":  time.Now().Add(1 * time.Hour).Unix(),
+		"name":   username,
+		"userId": id,
+		"exp":    time.Now().Add(1 * time.Hour).Unix(),
 	})
 	return token.SignedString(jwtKey)
 }
@@ -81,8 +82,7 @@ func postRegister(c *gin.Context) {
 	if err := json.Unmarshal(responseData, &returnData); err != nil {
 		return
 	}
-	fmt.Println(returnData["id"])
-	c.Redirect(http.StatusFound, "/user/"+returnData["id"])
+	c.Redirect(http.StatusFound, "/login")
 }
 
 func getLogin(c *gin.Context) {
@@ -95,19 +95,36 @@ func getLogin(c *gin.Context) {
 
 func postLogin(c *gin.Context) {
 	name := c.Request.FormValue("name")
-	// check future password here
-	token, err := GenerateToken(name)
+	// TODO: check a to be implemented password here
+	url := "http://apigateway:8080/user/name/" + name
+	response, err := http.Get(url)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user data"})
+		return
+	}
+	defer response.Body.Close()
+	responseData, err := io.ReadAll(response.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body"})
+		return
+	}
+	var returnData map[string]string
+	if err := json.Unmarshal(responseData, &returnData); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response data"})
+		return
+	}
+	token, err := GenerateToken(name, returnData["id"])
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Token generation failed"})
 		return
 	}
-	c.SetCookie("auth", token, 3600, "/", "localhost", false, true)
+	c.SetCookie("auth", token, 3600, "/", "http://localhost:8888", false, true)
 	c.JSON(http.StatusOK, gin.H{"message": "Login successful"})
 }
 
 func getUserPage(c *gin.Context) {
 	id := c.Param("id")
-	url := "http://apigateway:8080/user/" + id
+	url := "http://apigateway:8080/user/id/" + id
 	response, err := http.Get(url)
 	if err != nil {
 		return
@@ -137,6 +154,7 @@ func getUserPage(c *gin.Context) {
 	claims, _ := token.Claims.(jwt.MapClaims)
 	if claims["name"] != returnData["name"] {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized."})
+		return
 	}
 	renderTemplate(c.Writer, "default", &p)
 }
@@ -151,6 +169,48 @@ func getCreateGuestbook(c *gin.Context) {
 }
 
 func postCreateGuestbook(c *gin.Context) {
+	tokenString, err := c.Cookie("auth")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	token, err := ValidateToken(tokenString)
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+	claims, _ := token.Claims.(jwt.MapClaims)
+	fmt.Println(claims["userId"])
+	fmt.Println(c.Request.FormValue("domain"))
+	fmt.Println((c.Request.FormValue("approval") == "on"))
+	data := map[string]interface{}{
+		"ownerId":         claims["userId"],
+		"domain":          c.Request.FormValue("domain"),
+		"requireApproval": (c.Request.FormValue("approval") == "on"),
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	url := "http://apigateway:8080/guestbook/new"
+	response, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return
+	}
+	defer response.Body.Close()
+	responseData, err := io.ReadAll(response.Body)
+	if err != nil {
+		return
+	}
+	var returnData map[string]string
+	if err := json.Unmarshal(responseData, &returnData); err != nil {
+		return
+	}
+	c.Redirect(http.StatusFound, "/guestbook/"+returnData["id"])
+}
+
+func getGuestbook(c *gin.Context) {
 
 }
 
@@ -183,6 +243,7 @@ func main() {
 		rootGroup.GET("/user/:id", getUserPage)
 		rootGroup.GET("/guestbook/create", getCreateGuestbook)
 		rootGroup.POST("/guestbook/create", postCreateGuestbook)
+		rootGroup.GET("/guestbook/:id", getGuestbook)
 	}
 
 	router.Run()
