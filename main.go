@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -16,6 +15,7 @@ import (
 )
 
 var jwtKey = []byte("my_secret_key")
+var gatewayHost string = os.Getenv("GATEWAY_HOST")
 
 type Page struct {
 	Title string
@@ -68,7 +68,7 @@ func postRegister(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	url := "http://apigateway:8080/user/register"
+	url := "http://" + gatewayHost + "/user/register"
 	response, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return
@@ -96,7 +96,7 @@ func getLogin(c *gin.Context) {
 func postLogin(c *gin.Context) {
 	name := c.Request.FormValue("name")
 	// TODO: check a to be implemented password here
-	url := "http://apigateway:8080/user/name/" + name
+	url := "http://" + gatewayHost + "/user/name/" + name
 	response, err := http.Get(url)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user data"})
@@ -124,7 +124,7 @@ func postLogin(c *gin.Context) {
 
 func getUserPage(c *gin.Context) {
 	id := c.Param("id")
-	url := "http://apigateway:8080/user/id/" + id
+	url := "http://" + gatewayHost + "/user/id/" + id
 	response, err := http.Get(url)
 	if err != nil {
 		return
@@ -181,9 +181,6 @@ func postCreateGuestbook(c *gin.Context) {
 		return
 	}
 	claims, _ := token.Claims.(jwt.MapClaims)
-	fmt.Println(claims["userId"])
-	fmt.Println(c.Request.FormValue("domain"))
-	fmt.Println((c.Request.FormValue("approval") == "on"))
 	data := map[string]interface{}{
 		"ownerId":         claims["userId"],
 		"domain":          c.Request.FormValue("domain"),
@@ -193,7 +190,7 @@ func postCreateGuestbook(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	url := "http://apigateway:8080/guestbook/new"
+	url := "http://" + gatewayHost + "/guestbook/new"
 	response, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return
