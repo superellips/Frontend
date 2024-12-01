@@ -5,3 +5,4 @@ metadata:
 data:
   GATEWAY_HOST: "apigateway-service"
   GUESTBOOK_ROOT_DOMAIN: "localhost"
+  PORT: "80"
