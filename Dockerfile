@@ -15,7 +15,7 @@ RUN go install github.com/air-verse/air@latest && go install github.com/go-delve
 COPY go.mod go.sum ./
 RUN go mod download
 
-EXPOSE 80
+EXPOSE 8080
 EXPOSE 2345
 
 CMD [ "air", "-c", ".air.toml" ]
@@ -34,6 +34,6 @@ FROM alpine:latest AS prod
 ENV GIN_MODE="release"
 
 COPY --from=builder /app/frontend /usr/local/bin/frontend
-EXPOSE 8080
+EXPOSE 80
 
 ENTRYPOINT [ "/usr/local/bin/frontend" ]
