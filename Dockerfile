@@ -15,7 +15,7 @@ RUN go install github.com/air-verse/air@latest && go install github.com/go-delve
 COPY go.mod go.sum ./
 RUN go mod download
 
-EXPOSE 8080
+EXPOSE 80
 EXPOSE 2345
 
 CMD [ "air", "-c", ".air.toml" ]
