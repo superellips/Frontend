@@ -27,6 +27,8 @@ COPY go.mod go.sum .air.toml ./
 RUN go mod download && go mod verify
 
 COPY *.go ./
+COPY pages/* ./pages/
+COPY templates/* ./templates/
 RUN go build -o ./frontend
 
 FROM alpine:latest AS prod
