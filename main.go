@@ -23,7 +23,7 @@ type Page struct {
 }
 
 func loadPage(title string) (*Page, error) {
-	filename := "./pages/" + title + ".html"
+	filename := "/app/pages/" + title + ".html"
 	body, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -212,7 +212,7 @@ func getGuestbook(c *gin.Context) {
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	t, _ := template.ParseFiles("./templates/" + tmpl + ".html")
+	t, _ := template.ParseFiles("/app/templates/" + tmpl + ".html")
 	t.Execute(w, p)
 }
 

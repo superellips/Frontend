@@ -36,8 +36,8 @@ FROM alpine:latest AS prod
 ENV GIN_MODE="release"
 
 COPY --from=builder /app/frontend /usr/local/bin/frontend
-COPY --from=builder /app/templates/* /usr/local/bin/templates/
-COPY --from=builder /app/pages/* /usr/local/bin/pages/
+COPY --from=builder /app/templates/* /app/templates/
+COPY --from=builder /app/pages/* /app/pages/
 EXPOSE 8080
 
 ENTRYPOINT [ "/usr/local/bin/frontend" ]
