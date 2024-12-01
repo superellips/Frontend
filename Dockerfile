@@ -34,6 +34,6 @@ FROM alpine:latest AS prod
 ENV GIN_MODE="release"
 
 COPY --from=builder /app/frontend /usr/local/bin/frontend
-EXPOSE 80
+EXPOSE 8080
 
 ENTRYPOINT [ "/usr/local/bin/frontend" ]
