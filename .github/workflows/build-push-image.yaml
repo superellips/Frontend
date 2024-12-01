@@ -1,0 +1,37 @@
+name: Build and push docker image
+
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to registry
+        uses: docker/login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_AUTH_TOKEN }}
+      
+      - name: Build and push image
+        run: |
+          docker build -t ghcr.io/${{ secrets.GHCR_USERNAME }}/frontend:${{ github.sha }}
+          docker push -t ghcr.io/${{ secrets.GHCR_USERNAME }}/frontend:${{ github.sha }}
+
+      - name: Update manifests
+        run: |
+          sed -i 's|ghcr.io/${{ secrets.GHCR_USERNAME}}/frontend:*|ghcr.io/${{ secrets.GHCR_USERNAME}}/frontend:${{ github.sha }}' ./manifests/frontend-deployment.yaml
+
+      - name: Commit and push updated manifests
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "github-actions@github.com"
+          git add manifests/frontend-deployment.yaml
+          git commit -m "Update webapp image to ${{ github.sha }}"
+          git push
