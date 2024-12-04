@@ -209,10 +209,10 @@ func postCreateGuestbook(c *gin.Context) {
 }
 
 func getGuestbook(c *gin.Context) {
-	url := "http://" + gatewayHost + "/guestbook/:id"
+	url := "http://" + gatewayHost + "/guestbook/" + c.Param("id")
 	cookie, err := c.Cookie("auth")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read cookie"})
 		return
 	}
 	client := &http.Client{}
@@ -228,8 +228,19 @@ func getGuestbook(c *gin.Context) {
 		return
 	}
 	defer response.Body.Close()
-	c.JSON(http.StatusOK, response.Body)
-
+	var guestbookData map[string]interface{}
+	responseData, err := io.ReadAll(response.Body)
+	fmt.Println(response.StatusCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response data"})
+		return
+	}
+	if err := json.Unmarshal(responseData, &guestbookData); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parses guestbook data"})
+		return
+	}
+	p := Page{Title: guestbookData["domain"].(string), Body: bytes.NewBufferString(guestbookData["ownerId"].(string)).Bytes()}
+	renderTemplate(c.Writer, "default", &p)
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
