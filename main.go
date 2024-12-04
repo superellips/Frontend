@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -96,66 +97,63 @@ func getLogin(c *gin.Context) {
 func postLogin(c *gin.Context) {
 	name := c.Request.FormValue("name")
 	// TODO: check a to be implemented password here
-	url := "http://" + gatewayHost + "/user/name/" + name
-	response, err := http.Get(url)
+	url := "http://" + gatewayHost + "/user/login"
+	data := map[string]string{
+		"name": name,
+	}
+	jsonData, err := json.Marshal(data)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user data"})
+		fmt.Println("Error marshaling JSON:", err)
 		return
 	}
-	defer response.Body.Close()
-	responseData, err := io.ReadAll(response.Body)
+	body := bytes.NewBuffer(jsonData)
+	resp, err := http.Post(url, "application/json", body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
 		return
 	}
-	var returnData map[string]string
-	if err := json.Unmarshal(responseData, &returnData); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response data"})
-		return
+	for _, respCookie := range resp.Cookies() {
+		c.SetCookie(respCookie.Name, respCookie.Value, int(respCookie.MaxAge), respCookie.Path, respCookie.Domain, respCookie.Secure, respCookie.HttpOnly)
 	}
-	token, err := GenerateToken(name, returnData["id"])
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Token generation failed"})
-		return
-	}
-	c.SetCookie("auth", token, 3600, "/", "http://localhost:8888", false, true)
 	c.JSON(http.StatusOK, gin.H{"message": "Login successful"})
 }
 
 func getUserPage(c *gin.Context) {
 	id := c.Param("id")
 	url := "http://" + gatewayHost + "/user/id/" + id
-	response, err := http.Get(url)
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+	cookie, err := c.Request.Cookie("auth")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+		return
+	}
+	req.AddCookie(cookie)
+	response, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get response"})
 		return
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "statuscode error"})
+		return
+	}
 	responseData, err := io.ReadAll(response.Body)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Responsedata error"})
 		return
 	}
 	var returnData map[string]string
 	if err := json.Unmarshal(responseData, &returnData); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Json unmarshal error"})
 		return
 	}
 	p := Page{Title: returnData["name"], Body: []byte("<a href='/guestbook/create'>Create guestbook.</a>")}
-	tokenString, err := c.Cookie("auth")
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	token, err := ValidateToken(tokenString)
-	if err != nil || !token.Valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
-		return
-	}
-
-	claims, _ := token.Claims.(jwt.MapClaims)
-	if claims["name"] != returnData["name"] {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized."})
-		return
-	}
 	renderTemplate(c.Writer, "default", &p)
 }
 
@@ -169,45 +167,68 @@ func getCreateGuestbook(c *gin.Context) {
 }
 
 func postCreateGuestbook(c *gin.Context) {
-	tokenString, err := c.Cookie("auth")
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	token, err := ValidateToken(tokenString)
-	if err != nil || !token.Valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
-		return
-	}
-	claims, _ := token.Claims.(jwt.MapClaims)
 	data := map[string]interface{}{
-		"ownerId":         claims["userId"],
 		"domain":          c.Request.FormValue("domain"),
 		"requireApproval": (c.Request.FormValue("approval") == "on"),
 	}
 	jsonData, err := json.Marshal(data)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read request"})
 		return
 	}
 	url := "http://" + gatewayHost + "/guestbook/new"
-	response, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Request creation failed"})
+		return
+	}
+	client := http.Client{}
+	cookie, err := c.Request.Cookie("auth")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read cookie"})
+		return
+	}
+	req.AddCookie(cookie)
+	response, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to post request"})
 		return
 	}
 	defer response.Body.Close()
 	responseData, err := io.ReadAll(response.Body)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response"})
 		return
 	}
-	var returnData map[string]string
+	var returnData map[string]interface{}
 	if err := json.Unmarshal(responseData, &returnData); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse response data"})
 		return
 	}
-	c.Redirect(http.StatusFound, "/guestbook/"+returnData["id"])
+	c.Redirect(http.StatusFound, "/guestbook/"+returnData["id"].(string))
 }
 
 func getGuestbook(c *gin.Context) {
+	url := "http://" + gatewayHost + "/guestbook/:id"
+	cookie, err := c.Cookie("auth")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		return
+	}
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
+		return
+	}
+	req.Header.Set("auth", cookie)
+	response, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request failed"})
+		return
+	}
+	defer response.Body.Close()
+	c.JSON(http.StatusOK, response.Body)
 
 }
 
