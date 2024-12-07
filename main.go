@@ -12,15 +12,59 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtKey = []byte("my_secret_key")
 var gatewayHost string = os.Getenv("GATEWAY_HOST")
 
 type Page struct {
-	Title string
-	Body  []byte
+	Title         string
+	Body          []byte
+	Authenticated bool
+	UserId        string
+	UserName      string
+}
+
+func (p *Page) checkUser(c *gin.Context) {
+	url := "http://" + gatewayHost + "/user/active"
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		p.Authenticated = false
+		return
+	}
+	cookie, err := c.Request.Cookie("auth")
+	if err != nil {
+		p.Authenticated = false
+		return
+	}
+	req.AddCookie(cookie)
+	response, err := client.Do(req)
+	if err != nil {
+		p.Authenticated = false
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		p.Authenticated = false
+		return
+	}
+	responseData, err := io.ReadAll(response.Body)
+	if err != nil {
+		p.Authenticated = false
+		return
+	}
+	var returnData map[string]string
+	if err := json.Unmarshal(responseData, &returnData); err != nil {
+		p.Authenticated = false
+		return
+	}
+	if returnData["message"] != "" {
+		p.Authenticated = false
+		return
+	}
+	p.Authenticated = true
+	p.UserId = returnData["id"]
+	p.UserName = returnData["name"]
 }
 
 func loadPage(title string) (*Page, error) {
@@ -32,23 +76,10 @@ func loadPage(title string) (*Page, error) {
 	return &Page{Title: title, Body: body}, nil
 }
 
-func GenerateToken(username string, id string) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"name":   username,
-		"userId": id,
-		"exp":    time.Now().Add(1 * time.Hour).Unix(),
-	})
-	return token.SignedString(jwtKey)
-}
-
-func ValidateToken(tokenString string) (*jwt.Token, error) {
-	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	})
-}
-
 func getIndex(c *gin.Context) {
 	p, err := loadPage("index")
+	p.checkUser(c)
+	fmt.Println(p.Authenticated)
 	if err != nil {
 		return
 	}
@@ -57,6 +88,7 @@ func getIndex(c *gin.Context) {
 
 func getRegister(c *gin.Context) {
 	p, err := loadPage("register")
+	p.checkUser(c)
 	if err != nil {
 		return
 	}
@@ -91,7 +123,17 @@ func getLogin(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	p.checkUser(c)
+	if p.Authenticated {
+		c.Redirect(http.StatusFound, "/user/"+p.UserId)
+		return
+	}
 	renderTemplate(c.Writer, "default", p)
+}
+
+func getLogout(c *gin.Context) {
+	c.SetCookie("auth", "", -1, "/", "localhost", false, true)
+	c.Redirect(http.StatusFound, "/")
 }
 
 func postLogin(c *gin.Context) {
@@ -112,10 +154,21 @@ func postLogin(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
 		return
 	}
+	defer resp.Body.Close()
 	for _, respCookie := range resp.Cookies() {
 		c.SetCookie(respCookie.Name, respCookie.Value, int(respCookie.MaxAge), respCookie.Path, respCookie.Domain, respCookie.Secure, respCookie.HttpOnly)
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Login successful"})
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read response data"})
+		return
+	}
+	var userJson map[string]string
+	if err := json.Unmarshal(respData, &userJson); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse json data"})
+		return
+	}
+	c.Redirect(http.StatusFound, "/user/"+userJson["id"])
 }
 
 func getUserPage(c *gin.Context) {
@@ -154,6 +207,9 @@ func getUserPage(c *gin.Context) {
 		return
 	}
 	p := Page{Title: returnData["name"], Body: []byte("<a href='/guestbook/create'>Create guestbook.</a>")}
+	p.Authenticated = true
+	p.UserId = id
+	p.UserName = returnData["name"]
 	renderTemplate(c.Writer, "default", &p)
 }
 
@@ -163,6 +219,7 @@ func getCreateGuestbook(c *gin.Context) {
 		return
 	}
 	p.Title = "Create New Guestbook"
+	p.checkUser(c)
 	renderTemplate(c.Writer, "default", p)
 }
 
@@ -240,16 +297,17 @@ func getGuestbook(c *gin.Context) {
 		return
 	}
 	p := Page{Title: guestbookData["domain"].(string), Body: bytes.NewBufferString(guestbookData["ownerId"].(string)).Bytes()}
+	p.checkUser(c)
 	renderTemplate(c.Writer, "default", &p)
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	t, _ := template.ParseFiles("/app/templates/" + tmpl + ".html")
+	t, _ := template.ParseFiles("/app/templates/" + tmpl + ".gohtml")
 	t.Execute(w, p)
 }
 
 func main() {
-	hostname := "http://" + os.Getenv("GUESTBOOK_ROOT_DOMAIN")
+	hostname := os.Getenv("GUESTBOOK_ROOT_DOMAIN")
 
 	router := gin.Default()
 
@@ -269,6 +327,7 @@ func main() {
 		rootGroup.POST("/register", postRegister)
 		rootGroup.GET("/login", getLogin)
 		rootGroup.POST("/login", postLogin)
+		rootGroup.GET("/logout", getLogout)
 		rootGroup.GET("/user/:id", getUserPage)
 		rootGroup.GET("/guestbook/create", getCreateGuestbook)
 		rootGroup.POST("/guestbook/create", postCreateGuestbook)

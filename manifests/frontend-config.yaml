@@ -4,4 +4,4 @@ metadata:
   name: frontend-config
 data:
   GATEWAY_HOST: "apigateway-service"
-  GUESTBOOK_ROOT_DOMAIN: "localhost"
+  GUESTBOOK_ROOT_DOMAIN: "*guestbooks.online"
