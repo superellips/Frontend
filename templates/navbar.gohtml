@@ -1,16 +1,14 @@
 {{ define "navbar" }}
-<div id="headerArea">
-    
-    
-<nav id="navbar" style="margin-bottom: 0px;">
+<nav id="navbar" style="margin-bottom: 0px; margin-top: 10px;">
 <ul>
-        <li><a href="#">Home</a></li>
-        <li><a href="#">Link</a></li>
-        <li><a href="#">Link</a></li>
-        <li><a href="#">Link</a></li>
-        <li><a href="#">Link</a></li>
-        <li><a href="#">Link</a></li>
+        <li><a href="/">Home</a></li>
+        {{ if .Authenticated }}
+        <li><a href="/user/{{ .UserId }}">{{ .UserName }}</a></li>
+        <li><a href="/logout">Logout</a></li>
+        {{ else }}
+        <li><a href="/register">Register</a></li>
+        <li><a href="/login">Login</a></li>
+        {{ end }}
 </ul>
 </nav>
-</div>
 {{ end }}

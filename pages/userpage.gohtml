@@ -1,0 +1,10 @@
+{{ define "content" }}
+<ul>
+{{ if gt (len .Guestbooks ) 0 }}
+{{ range $key, $value := .Guestbooks }}
+    <li><a href="/guestbook/{{ $key }}">{{ $value }}</a></li>
+{{ end }}
+{{ end }}
+    <li><a href="/guestbook/create">Create new guestbook</a></li>
+</ul>
+{{ end }}

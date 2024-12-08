@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
-	"text/template"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -15,13 +15,15 @@ import (
 )
 
 var gatewayHost string = os.Getenv("GATEWAY_HOST")
+var hostname = os.Getenv("GUESTBOOK_ROOT_DOMAIN")
 
 type Page struct {
 	Title         string
-	Body          []byte
+	Template      string
 	Authenticated bool
 	UserId        string
 	UserName      string
+	Guestbooks    map[string]string
 }
 
 func (p *Page) checkUser(c *gin.Context) {
@@ -67,32 +69,20 @@ func (p *Page) checkUser(c *gin.Context) {
 	p.UserName = returnData["name"]
 }
 
-func loadPage(title string) (*Page, error) {
-	filename := "/app/pages/" + title + ".html"
-	body, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	return &Page{Title: title, Body: body}, nil
-}
-
 func getIndex(c *gin.Context) {
-	p, err := loadPage("index")
+	var p Page
 	p.checkUser(c)
-	fmt.Println(p.Authenticated)
-	if err != nil {
-		return
-	}
-	renderTemplate(c.Writer, "default", p)
+	p.Title = "index"
+	p.Template = "index"
+	renderTemplate(c.Writer, &p)
 }
 
 func getRegister(c *gin.Context) {
-	p, err := loadPage("register")
+	var p Page
 	p.checkUser(c)
-	if err != nil {
-		return
-	}
-	renderTemplate(c.Writer, "default", p)
+	p.Title = "Register"
+	p.Template = "register"
+	renderTemplate(c.Writer, &p)
 }
 
 func postRegister(c *gin.Context) {
@@ -119,20 +109,19 @@ func postRegister(c *gin.Context) {
 }
 
 func getLogin(c *gin.Context) {
-	p, err := loadPage("login")
-	if err != nil {
-		return
-	}
+	var p Page
+	p.Title = "Login"
+	p.Template = "login"
 	p.checkUser(c)
 	if p.Authenticated {
 		c.Redirect(http.StatusFound, "/user/"+p.UserId)
 		return
 	}
-	renderTemplate(c.Writer, "default", p)
+	renderTemplate(c.Writer, &p)
 }
 
 func getLogout(c *gin.Context) {
-	c.SetCookie("auth", "", -1, "/", "localhost", false, true)
+	c.SetCookie("auth", "", -1, "/", hostname, false, true)
 	c.Redirect(http.StatusFound, "/")
 }
 
@@ -201,26 +190,31 @@ func getUserPage(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Responsedata error"})
 		return
 	}
-	var returnData map[string]string
+	var returnData map[string]interface{}
 	if err := json.Unmarshal(responseData, &returnData); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Json unmarshal error"})
 		return
 	}
-	p := Page{Title: returnData["name"], Body: []byte("<a href='/guestbook/create'>Create guestbook.</a>")}
+	var p Page
+	p.Title = returnData["name"].(string)
+	p.Template = "userpage"
 	p.Authenticated = true
 	p.UserId = id
-	p.UserName = returnData["name"]
-	renderTemplate(c.Writer, "default", &p)
+	p.UserName = returnData["name"].(string)
+	if returnData["guestbooks"] == nil {
+		p.Guestbooks = nil
+	} else {
+		p.Guestbooks = returnData["guestbooks"].(map[string]string)
+	}
+	renderTemplate(c.Writer, &p)
 }
 
 func getCreateGuestbook(c *gin.Context) {
-	p, err := loadPage("create_guestbook")
-	if err != nil {
-		return
-	}
+	var p Page
 	p.Title = "Create New Guestbook"
+	p.Template = "create_guestbook"
 	p.checkUser(c)
-	renderTemplate(c.Writer, "default", p)
+	renderTemplate(c.Writer, &p)
 }
 
 func postCreateGuestbook(c *gin.Context) {
@@ -296,18 +290,22 @@ func getGuestbook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parses guestbook data"})
 		return
 	}
-	p := Page{Title: guestbookData["domain"].(string), Body: bytes.NewBufferString(guestbookData["ownerId"].(string)).Bytes()}
+	p := Page{Title: guestbookData["domain"].(string), Template: "guestbook"}
 	p.checkUser(c)
-	renderTemplate(c.Writer, "default", &p)
+	renderTemplate(c.Writer, &p)
 }
 
-func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	t, _ := template.ParseFiles("/app/templates/" + tmpl + ".gohtml")
+func renderTemplate(w http.ResponseWriter, p *Page) {
+	t := template.Must(template.ParseFiles(
+		"/app/templates/default.gohtml",
+		"/app/templates/navbar.gohtml",
+		"/app/templates/style.gohtml",
+		"/app/templates/footer.gohtml",
+		"/app/pages/"+p.Template+".gohtml"))
 	t.Execute(w, p)
 }
 
 func main() {
-	hostname := os.Getenv("GUESTBOOK_ROOT_DOMAIN")
 
 	router := gin.Default()
 
