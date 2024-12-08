@@ -17,13 +17,23 @@ import (
 var gatewayHost string = os.Getenv("GATEWAY_HOST")
 var hostname = os.Getenv("GUESTBOOK_ROOT_DOMAIN")
 
+type Message struct {
+	Id          string `json:"id"`
+	GuestbookId string `json:"guestbookId"`
+	SenderName  string `json:"senderName"`
+	SenderEmail string `json:"senderEmail"`
+	Text        string `json:"text"`
+	Approved    bool   `json:"approved"`
+}
+
 type Page struct {
 	Title         string
 	Template      string
 	Authenticated bool
 	UserId        string
 	UserName      string
-	Guestbooks    map[string]string
+	Guestbooks    map[string]interface{}
+	Messages      []interface{}
 }
 
 func (p *Page) checkUser(c *gin.Context) {
@@ -74,6 +84,14 @@ func getIndex(c *gin.Context) {
 	p.checkUser(c)
 	p.Title = "index"
 	p.Template = "index"
+	renderTemplate(c.Writer, &p)
+}
+
+func getAbout(c *gin.Context) {
+	var p Page
+	p.checkUser(c)
+	p.Title = "About"
+	p.Template = "about"
 	renderTemplate(c.Writer, &p)
 }
 
@@ -204,7 +222,7 @@ func getUserPage(c *gin.Context) {
 	if returnData["guestbooks"] == nil {
 		p.Guestbooks = nil
 	} else {
-		p.Guestbooks = returnData["guestbooks"].(map[string]string)
+		p.Guestbooks = returnData["guestbooks"].(map[string]interface{})
 	}
 	renderTemplate(c.Writer, &p)
 }
@@ -290,9 +308,31 @@ func getGuestbook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parses guestbook data"})
 		return
 	}
-	p := Page{Title: guestbookData["domain"].(string), Template: "guestbook"}
+	p := Page{
+		Title:    guestbookData["domain"].(string),
+		Template: "guestbook",
+	}
+	if guestbookData["messages"] != nil {
+		p.Messages = guestbookData["messages"].([]interface{})
+	} else {
+		p.Messages = nil
+	}
 	p.checkUser(c)
 	renderTemplate(c.Writer, &p)
+}
+
+func deleteMessage(c *gin.Context) {
+	url := "http://" + gatewayHost + "/guestbook/" + c.Param("id") + "/delete/" + c.Param("msgId")
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return
+	}
+	_, err = client.Do(req)
+	if err != nil {
+		return
+	}
+	c.Redirect(http.StatusFound, "/guestbook/"+c.Param("id"))
 }
 
 func renderTemplate(w http.ResponseWriter, p *Page) {
@@ -330,6 +370,8 @@ func main() {
 		rootGroup.GET("/guestbook/create", getCreateGuestbook)
 		rootGroup.POST("/guestbook/create", postCreateGuestbook)
 		rootGroup.GET("/guestbook/:id", getGuestbook)
+		rootGroup.GET("/guestbook/:id/delete/:msgId", deleteMessage)
+		rootGroup.GET("/about", getAbout)
 	}
 
 	router.Run()

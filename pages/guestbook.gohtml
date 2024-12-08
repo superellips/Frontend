@@ -1,3 +1,54 @@
 {{ define "content" }}
-
+    <style>
+        .MessageList {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .MessageList li {
+            margin: 0px 0;
+        }
+        .MessageBox {
+            border: 4px solid #ffce96;
+            border-radius: 4px;
+            padding: 2px;
+            width: 100%;
+            margin: 8px;
+        }
+        .MessageBox hr {
+            color: #ffce96;
+            display: block;
+            margin-top: 1px;
+            margin-bottom: 2px;
+            margin-left: -2px;
+            margin-right: -2px;
+            border-style: solid;
+            border-width: 1px;
+        }
+    </style>
+    {{ if eq ( .Messages ) nil }}
+    <p> Nothing here yet. :(</p>
+    {{ else }}
+        {{ range .Messages }}
+        <ul class="MessageList">
+        <li>
+        <div class="MessageBox">
+        <strong style="color: #00303b;">From: </strong><a href="mailto:{{ .senderEmail }}">{{ .senderName }}</a> ({{ .senderEmail }}) 
+        {{ if .approved }}
+        (Approved)
+        {{ else }}
+        (Not Approved)
+        {{ end }}
+        <hr>
+        {{ .text }}
+        <hr>
+        {{ if not .approved }}
+        <button>Approve</button>
+        {{ end }}
+        <a href="/guestbook/{{ .guestbookId}}/delete/{{ .id }}">Delete</a>
+        </div>
+        </li>
+        </ul>
+        {{ end }}
+    {{ end }}
 {{ end }}
