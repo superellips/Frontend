@@ -16,7 +16,7 @@ spec:
       - name: regcred
       containers:
       - name: frontend-container
-        image: ghcr.io/superellips/frontend:95e6b55404d289f32ae094c422d0fb2b1ed35eb9
+        image: ghcr.io/superellips/frontend:c5957d5bf225971f9b4beda18ec2325ba504fce9
         # resources:
         #   limits:
         #     cpu: "10"
